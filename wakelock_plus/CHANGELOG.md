@@ -1,3 +1,6 @@
+## [1.8.3]
+* Linux: repeated `enable` calls no longer add a new inhibitor each time, and a `disable` sent while `enable` is still running now releases it.
+
 ## [1.8.2]
 * [#142](https://github.com/fluttercommunity/wakelock_plus/pull/142): Include no_sleep.js only on web builds. Thanks [DublikuntMux](https://github.com/DublikuntMux).
 

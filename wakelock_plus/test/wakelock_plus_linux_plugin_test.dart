@@ -145,6 +145,63 @@ void main() {
         final options = captured[2] as DBusDict;
         expect(options.children.containsKey(DBusString('reason')), isTrue);
       });
+
+      test('calls Inhibit once when already enabled', () async {
+        final mockResponse = DBusMethodSuccessResponse([
+          DBusObjectPath('/org/freedesktop/portal/desktop/request/1_1/test'),
+        ]);
+
+        when(
+          () => mockPortalObject.callMethod(
+            any(),
+            any(),
+            any(),
+            replySignature: any(named: 'replySignature'),
+          ),
+        ).thenAnswer((_) async => mockResponse);
+
+        await plugin.toggle(enable: true);
+        await plugin.toggle(enable: true);
+        await Future.wait([
+          plugin.toggle(enable: true),
+          plugin.toggle(enable: true),
+        ]);
+
+        verify(
+          () => mockPortalObject.callMethod(
+            'org.freedesktop.portal.Inhibit',
+            'Inhibit',
+            any(),
+            replySignature: any(named: 'replySignature'),
+          ),
+        ).called(1);
+      });
+
+      test('failed Inhibit does not block later calls', () async {
+        final mockResponse = DBusMethodSuccessResponse([
+          DBusObjectPath('/org/freedesktop/portal/desktop/request/1_1/test'),
+        ]);
+        var callCount = 0;
+
+        when(
+          () => mockPortalObject.callMethod(
+            any(),
+            any(),
+            any(),
+            replySignature: any(named: 'replySignature'),
+          ),
+        ).thenAnswer((_) async {
+          callCount++;
+          if (callCount == 1) throw Exception('portal unavailable');
+          return mockResponse;
+        });
+
+        await expectLater(plugin.toggle(enable: true), throwsException);
+        expect(await plugin.enabled, isFalse);
+
+        await plugin.toggle(enable: true);
+        expect(await plugin.enabled, isTrue);
+      });
     });
 
     group('disable', () {
@@ -185,6 +242,49 @@ void main() {
         expect(await plugin.enabled, isFalse);
 
         // Verify Close was called
+        verify(
+          () => mockClient.callMethod(
+            destination: 'org.freedesktop.portal.Desktop',
+            path: handlePath,
+            interface: 'org.freedesktop.portal.Request',
+            name: 'Close',
+            values: [],
+            replySignature: DBusSignature.empty,
+          ),
+        ).called(1);
+      });
+
+      test('disable right after enable closes the request', () async {
+        final handlePath = DBusObjectPath(
+          '/org/freedesktop/portal/desktop/request/1_1/test',
+        );
+
+        when(
+          () => mockPortalObject.callMethod(
+            'org.freedesktop.portal.Inhibit',
+            'Inhibit',
+            any(),
+            replySignature: any(named: 'replySignature'),
+          ),
+        ).thenAnswer((_) async => DBusMethodSuccessResponse([handlePath]));
+
+        when(
+          () => mockClient.callMethod(
+            destination: 'org.freedesktop.portal.Desktop',
+            path: handlePath,
+            interface: 'org.freedesktop.portal.Request',
+            name: 'Close',
+            values: any(named: 'values'),
+            replySignature: DBusSignature.empty,
+          ),
+        ).thenAnswer((_) async => DBusMethodSuccessResponse([]));
+
+        // Not awaited, so disable is sent while Inhibit is still running
+        final enableFuture = plugin.toggle(enable: true);
+        await plugin.toggle(enable: false);
+        await enableFuture;
+
+        expect(await plugin.enabled, isFalse);
         verify(
           () => mockClient.callMethod(
             destination: 'org.freedesktop.portal.Desktop',

@@ -52,9 +52,18 @@ class WakelockPlusLinuxPlugin extends WakelockPlusPlatformInterface {
       _appNameGetter?.call() ??
       PackageInfo.fromPlatform().then((info) => info.appName);
 
+  Future<void> _pendingToggle = Future.value();
+
   @override
-  Future<void> toggle({required bool enable}) async {
+  Future<void> toggle({required bool enable}) {
+    final toggleFuture = _pendingToggle.then((_) => _toggle(enable: enable));
+    _pendingToggle = toggleFuture.catchError((_) {});
+    return toggleFuture;
+  }
+
+  Future<void> _toggle({required bool enable}) async {
     if (enable) {
+      if (_requestHandle != null) return;
       final appName = await _appName;
       _requestHandle = await _object
           .callMethod('org.freedesktop.portal.Inhibit', 'Inhibit', [
